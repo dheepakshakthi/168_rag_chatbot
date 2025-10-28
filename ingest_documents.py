@@ -1,9 +1,14 @@
 """
 Document Ingestion Script
-Processes PDF files and creates a vector database for RAG
+Processes PDF, HTML, and code files and creates a vector database for RAG
 """
 import os
-from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
+from langchain_community.document_loaders import (
+    PyPDFLoader, 
+    DirectoryLoader,
+    UnstructuredHTMLLoader,
+    TextLoader
+)
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -14,16 +19,56 @@ CHROMA_PATH = "chroma_db"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 def load_documents():
-    """Load PDF documents from the data directory"""
-    print("Loading PDF documents...")
-    loader = DirectoryLoader(
-        DATA_PATH,
-        glob="*.pdf",
-        loader_cls=PyPDFLoader,
-        show_progress=True
-    )
-    documents = loader.load()
-    print(f"Loaded {len(documents)} document pages")
+    """Load documents from the data directory (PDF, HTML, and code files)"""
+    print("Loading documents...")
+    documents = []
+    
+    if not os.path.exists(DATA_PATH):
+        print(f"Creating {DATA_PATH} directory...")
+        os.makedirs(DATA_PATH)
+        return documents
+    
+    files = os.listdir(DATA_PATH)
+    if not files:
+        print("No files found in data directory")
+        return documents
+    
+    # Load PDFs
+    pdf_files = [f for f in files if f.endswith('.pdf')]
+    if pdf_files:
+        print(f"Loading {len(pdf_files)} PDF file(s)...")
+        for pdf_file in pdf_files:
+            try:
+                loader = PyPDFLoader(os.path.join(DATA_PATH, pdf_file))
+                documents.extend(loader.load())
+            except Exception as e:
+                print(f"Error loading {pdf_file}: {e}")
+    
+    # Load HTML files
+    html_files = [f for f in files if f.endswith(('.html', '.htm'))]
+    if html_files:
+        print(f"Loading {len(html_files)} HTML file(s)...")
+        for html_file in html_files:
+            try:
+                loader = UnstructuredHTMLLoader(os.path.join(DATA_PATH, html_file))
+                documents.extend(loader.load())
+            except Exception as e:
+                print(f"Error loading {html_file}: {e}")
+    
+    # Load code and text files
+    code_extensions = ['.py', '.java', '.js', '.cpp', '.c', '.h', '.cs', '.rb', 
+                      '.go', '.rs', '.php', '.swift', '.kt', '.ts', '.txt', '.md']
+    code_files = [f for f in files if any(f.endswith(ext) for ext in code_extensions)]
+    if code_files:
+        print(f"Loading {len(code_files)} code/text file(s)...")
+        for code_file in code_files:
+            try:
+                loader = TextLoader(os.path.join(DATA_PATH, code_file), encoding='utf-8')
+                documents.extend(loader.load())
+            except Exception as e:
+                print(f"Error loading {code_file}: {e}")
+    
+    print(f"Loaded {len(documents)} document sections total")
     return documents
 
 def split_documents(documents):
@@ -42,9 +87,16 @@ def split_documents(documents):
 def create_vector_store(chunks):
     """Create and persist vector store"""
     print("Creating embeddings and vector store...")
+    
+    # Delete existing vector store if it exists
+    if os.path.exists(CHROMA_PATH):
+        print(f"Removing existing vector store at {CHROMA_PATH}...")
+        import shutil
+        shutil.rmtree(CHROMA_PATH)
+    
     embeddings = HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL,
-        model_kwargs={'device': 'cuda'},
+        model_kwargs={'device': 'cpu'},  # Changed to CPU for compatibility
         encode_kwargs={'normalize_embeddings': True}
     )
     

@@ -8,6 +8,105 @@ messageInput.addEventListener('input', function() {
     this.style.height = (this.scrollHeight) + 'px';
 });
 
+// Handle file upload
+async function handleFileUpload(event) {
+    const files = event.target.files;
+    if (files.length === 0) return;
+    
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+    }
+    
+    // Show upload status
+    showNotification('Uploading and processing files...', 'info');
+    
+    try {
+        const response = await fetch('/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification(data.message + ' - RAG mode enabled!', 'success');
+            // Update UI
+            window.hasDocuments = data.has_documents;
+            updateHeaderMode(data.has_documents);
+            // Enable clear docs button
+            document.querySelector('.clear-docs-btn').disabled = false;
+        } else {
+            showNotification('Error: ' + data.error, 'error');
+        }
+    } catch (error) {
+        showNotification('Upload failed: ' + error.message, 'error');
+    }
+    
+    // Reset file input
+    event.target.value = '';
+}
+
+// Clear documents
+async function clearDocuments() {
+    if (!confirm('Are you sure you want to delete all uploaded documents? This will also clear the vector database.')) {
+        return;
+    }
+    
+    showNotification('Clearing documents...', 'info');
+    
+    try {
+        const response = await fetch('/clear_documents', {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            if (data.needs_restart) {
+                showNotification(data.message, 'info', 10000);
+            } else {
+                showNotification(data.message + ' - Switched to general mode', 'success');
+                window.hasDocuments = false;
+                updateHeaderMode(false);
+                // Disable clear docs button
+                document.querySelector('.clear-docs-btn').disabled = true;
+            }
+        } else {
+            showNotification('Error: ' + data.error, 'error', 10000);
+        }
+    } catch (error) {
+        showNotification('Failed to clear documents: ' + error.message, 'error');
+    }
+}
+
+// Update header mode indicator
+function updateHeaderMode(hasDocuments) {
+    const modeText = document.querySelector('.logo-text p');
+    if (modeText) {
+        modeText.textContent = hasDocuments ? 'Your AI Assistant (RAG Mode)' : 'Your AI Assistant (General Mode)';
+    }
+}
+
+// Show notification
+function showNotification(message, type = 'info', duration = 5000) {
+    // Remove existing notification
+    const existing = document.querySelector('.notification');
+    if (existing) existing.remove();
+    
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    
+    document.body.appendChild(notification);
+    
+    // Auto-remove after specified duration
+    setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => notification.remove(), 300);
+    }, duration);
+}
+
 // Handle Enter key
 function handleKeyPress(event) {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -96,8 +195,11 @@ function addMessage(text, sender, sources = null) {
         
         let sourcesHTML = '<div class="sources-title">📚 Sources:</div>';
         sources.forEach((source, index) => {
+            const relevance = source.page !== 'N/A' 
+                ? `Page ${source.page} - Relevance: ${(1 - source.score).toFixed(2)}`
+                : `Relevance: ${(1 - source.score).toFixed(2)}`;
             sourcesHTML += `<div class="source-item">
-                ${index + 1}. ${source.source} (Page ${source.page}) - Relevance: ${(1 - source.score).toFixed(2)}
+                ${index + 1}. ${source.source} (${relevance})
             </div>`;
         });
         
@@ -163,31 +265,39 @@ function removeTypingIndicator(id) {
 // Clear chat
 async function clearChat() {
     if (confirm('Are you sure you want to clear the chat?')) {
+        const ragStatus = window.hasDocuments 
+            ? '<p class="rag-status">🟢 RAG Mode Active - I\'ll answer based on your uploaded documents</p>'
+            : '<p class="rag-status">🔵 General Mode - Upload documents to enable RAG capabilities</p>';
+        
         // Clear chat container
         chatContainer.innerHTML = `
             <div class="welcome-message">
                 <div class="welcome-icon">💡</div>
-                <h2>Welcome to 168!</h2>
-                <p>I'm your AI coding assistant powered by RAG technology. I can help you with:</p>
+                <h2>Welcome to 168 AI Assistant!</h2>
+                ${ragStatus}
+                <p>I'm your AI assistant that can help you with various tasks:</p>
                 <div class="feature-grid">
                     <div class="feature-item">
-                        <span class="feature-icon">🐍</span>
-                        <span>Python Programming</span>
+                        <span class="feature-icon">�</span>
+                        <span>PDF Documents</span>
                     </div>
                     <div class="feature-item">
-                        <span class="feature-icon">☕</span>
-                        <span>Java Development</span>
+                        <span class="feature-icon">🌐</span>
+                        <span>HTML Files</span>
                     </div>
                     <div class="feature-item">
-                        <span class="feature-icon">📚</span>
-                        <span>Code Examples</span>
+                        <span class="feature-icon">�</span>
+                        <span>Code Files</span>
                     </div>
                     <div class="feature-item">
-                        <span class="feature-icon">🔍</span>
-                        <span>Best Practices</span>
+                        <span class="feature-icon">�</span>
+                        <span>General Chat</span>
                     </div>
                 </div>
-                <p class="welcome-subtext">Ask me anything about coding based on your learning materials!</p>
+                <p class="welcome-subtext">Upload your documents to get started with RAG, or just chat with me!</p>
+                <div class="supported-formats">
+                    <strong>Supported formats:</strong> PDF, HTML, Python, Java, JavaScript, C/C++, C#, Ruby, Go, Rust, PHP, Swift, Kotlin, TypeScript, Text, Markdown
+                </div>
             </div>
         `;
         

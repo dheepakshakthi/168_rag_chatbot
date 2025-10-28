@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>168 - Coding Assistant</title>
+    <title>168 - AI Assistant</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body>
+<body data-has-documents="{% if has_documents %}true{% else %}false{% endif %}">
     <div class="container">
         <!-- Header -->
         <header class="header">
@@ -15,43 +15,68 @@
                 <div class="logo-icon">168</div>
                 <div class="logo-text">
                     <h1>168</h1>
-                    <p>Your AI Coding Assistant</p>
+                    <p>Your AI Assistant {% if has_documents %}(RAG Mode){% else %}(General Mode){% endif %}</p>
                 </div>
             </div>
-            <button class="clear-btn" onclick="clearChat()">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                </svg>
-                Clear Chat
-            </button>
+            <div class="header-actions">
+                <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                    </svg>
+                    Upload Files
+                </button>
+                <button class="clear-docs-btn" onclick="clearDocuments()" {% if not has_documents %}disabled{% endif %}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/>
+                    </svg>
+                    Clear Docs
+                </button>
+                <button class="clear-btn" onclick="clearChat()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                    </svg>
+                    Clear Chat
+                </button>
+            </div>
         </header>
+
+        <!-- Hidden File Input -->
+        <input type="file" id="fileInput" multiple accept=".pdf,.html,.htm,.py,.java,.js,.cpp,.c,.h,.cs,.rb,.go,.rs,.php,.swift,.kt,.ts,.txt,.md" style="display: none;" onchange="handleFileUpload(event)">
 
         <!-- Chat Container -->
         <div class="chat-container" id="chatContainer">
             <!-- Welcome Message -->
             <div class="welcome-message">
                 <div class="welcome-icon">💡</div>
-                <h2>Welcome to 168!</h2>
-                <p>I'm your AI coding assistant powered by RAG technology. I can help you with:</p>
+                <h2>Welcome to 168 AI Assistant!</h2>
+                {% if has_documents %}
+                <p class="rag-status">🟢 RAG Mode Active - I'll answer based on your uploaded documents</p>
+                {% else %}
+                <p class="rag-status">🔵 General Mode - Upload documents to enable RAG capabilities</p>
+                {% endif %}
+                <p>I'm your AI assistant that can help you with various tasks:</p>
                 <div class="feature-grid">
                     <div class="feature-item">
-                        <span class="feature-icon">🐍</span>
-                        <span>Python Programming</span>
+                        <span class="feature-icon">�</span>
+                        <span>PDF Documents</span>
                     </div>
                     <div class="feature-item">
-                        <span class="feature-icon">☕</span>
-                        <span>Java Development</span>
+                        <span class="feature-icon">🌐</span>
+                        <span>HTML Files</span>
                     </div>
                     <div class="feature-item">
-                        <span class="feature-icon">📚</span>
-                        <span>Code Examples</span>
+                        <span class="feature-icon">�</span>
+                        <span>Code Files</span>
                     </div>
                     <div class="feature-item">
-                        <span class="feature-icon">🔍</span>
-                        <span>Best Practices</span>
+                        <span class="feature-icon">�</span>
+                        <span>General Chat</span>
                     </div>
                 </div>
-                <p class="welcome-subtext">Ask me anything about coding based on your learning materials!</p>
+                <p class="welcome-subtext">Upload your documents to get started with RAG, or just chat with me!</p>
+                <div class="supported-formats">
+                    <strong>Supported formats:</strong> PDF, HTML, Python, Java, JavaScript, C/C++, C#, Ruby, Go, Rust, PHP, Swift, Kotlin, TypeScript, Text, Markdown
+                </div>
             </div>
         </div>
 
@@ -60,7 +85,7 @@
             <div class="input-container">
                 <textarea 
                     id="messageInput" 
-                    placeholder="Ask me anything about Python or Java..." 
+                    placeholder="Ask me anything..." 
                     rows="1"
                     onkeydown="handleKeyPress(event)"
                 ></textarea>
@@ -77,5 +102,9 @@
     </div>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        // Initialize with server-side value
+        window.hasDocuments = document.body.dataset.hasDocuments === 'true';
+    </script>
 </body>
 </html>
