@@ -3,19 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>168 - AI Assistant</title>
+    <title>Chat168</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body data-has-documents="{% if has_documents %}true{% else %}false{% endif %}">
+    <div class="app-layout">
+        <!-- Sidebar - Chat History -->
+        <aside class="sidebar history-sidebar" id="historySidebar">
+            <div class="sidebar-header">
+                <h3>💬 Chat History</h3>
+                <button class="sidebar-toggle" onclick="toggleSidebar('history')">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M15 18l-6-6 6-6"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="sidebar-content" id="historyList">
+                <div class="loading-text">Loading...</div>
+            </div>
+            <div class="sidebar-footer">
+                <button class="new-chat-btn" onclick="startNewChat()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                    New Chat
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="main-content">
     <div class="container">
         <!-- Header -->
         <header class="header">
+            <button class="sidebar-toggle-btn" onclick="toggleSidebar('history')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+            </button>
             <div class="logo">
                 <div class="logo-icon">168</div>
                 <div class="logo-text">
-                    <h1>168</h1>
-                    <p>Your AI Assistant {% if has_documents %}(RAG Mode){% else %}(General Mode){% endif %}</p>
+                    <h1>Chat168</h1>
                 </div>
             </div>
             <div class="header-actions">
@@ -24,6 +54,13 @@
                         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
                     </svg>
                     Upload Files
+                </button>
+                <button class="files-btn" onclick="toggleSidebar('files')">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/>
+                        <path d="M13 2v7h7"/>
+                    </svg>
+                    Files
                 </button>
                 <button class="clear-docs-btn" onclick="clearDocuments()" {% if not has_documents %}disabled{% endif %}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -47,36 +84,7 @@
         <div class="chat-container" id="chatContainer">
             <!-- Welcome Message -->
             <div class="welcome-message">
-                <div class="welcome-icon">💡</div>
-                <h2>Welcome to 168 AI Assistant!</h2>
-                {% if has_documents %}
-                <p class="rag-status">🟢 RAG Mode Active - I'll answer based on your uploaded documents</p>
-                {% else %}
-                <p class="rag-status">🔵 General Mode - Upload documents to enable RAG capabilities</p>
-                {% endif %}
-                <p>I'm your AI assistant that can help you with various tasks:</p>
-                <div class="feature-grid">
-                    <div class="feature-item">
-                        <span class="feature-icon">�</span>
-                        <span>PDF Documents</span>
-                    </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">🌐</span>
-                        <span>HTML Files</span>
-                    </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">�</span>
-                        <span>Code Files</span>
-                    </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">�</span>
-                        <span>General Chat</span>
-                    </div>
-                </div>
-                <p class="welcome-subtext">Upload your documents to get started with RAG, or just chat with me!</p>
-                <div class="supported-formats">
-                    <strong>Supported formats:</strong> PDF, HTML, Python, Java, JavaScript, C/C++, C#, Ruby, Go, Rust, PHP, Swift, Kotlin, TypeScript, Text, Markdown
-                </div>
+                <h2>Hello!</h2>
             </div>
         </div>
 
@@ -101,10 +109,27 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+        <!-- Sidebar - Files -->
+        <aside class="sidebar files-sidebar" id="filesSidebar">
+            <div class="sidebar-header">
+                <h3>📁 Uploaded Files</h3>
+                <button class="sidebar-toggle" onclick="toggleSidebar('files')">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 18l6-6-6-6"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="sidebar-content" id="filesList">
+                <div class="loading-text">Loading...</div>
+            </div>
+        </aside>
+    </div>
+
     <script>
-        // Initialize with server-side value
+        // Pass has_documents value to JavaScript
         window.hasDocuments = document.body.dataset.hasDocuments === 'true';
+        window.currentSessionId = 'session_' + Date.now();
     </script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

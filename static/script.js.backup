@@ -506,3 +506,49 @@ async function clearChat() {
     }
 }
 
+// Focus input on load
+        const ragStatus = window.hasDocuments 
+            ? '<p class="rag-status">🟢 RAG Mode Active - I\'ll answer based on your uploaded documents</p>'
+            : '<p class="rag-status">🔵 General Mode - Upload documents to enable RAG capabilities</p>';
+        
+        // Clear chat container
+        chatContainer.innerHTML = `
+            <div class="welcome-message">
+                <div class="welcome-icon">💡</div>
+                <h2>Welcome to 168 AI Assistant!</h2>
+                ${ragStatus}
+                <p>I'm your AI assistant that can help you with various tasks:</p>
+                <div class="feature-grid">
+                    <div class="feature-item">
+                        <span class="feature-icon">�</span>
+                        <span>PDF Documents</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">🌐</span>
+                        <span>HTML Files</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">�</span>
+                        <span>Code Files</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">�</span>
+                        <span>General Chat</span>
+                    </div>
+                </div>
+                <p class="welcome-subtext">Upload your documents to get started with RAG, or just chat with me!</p>
+                <div class="supported-formats">
+                    <strong>Supported formats:</strong> PDF, HTML, Python, Java, JavaScript, C/C++, C#, Ruby, Go, Rust, PHP, Swift, Kotlin, TypeScript, Text, Markdown
+                </div>
+            </div>
+        `;
+        
+        // Call clear endpoint
+        await fetch('/clear', { method: 'POST' });
+    }
+}
+
+// Focus input on load
+window.addEventListener('load', () => {
+    messageInput.focus();
+});

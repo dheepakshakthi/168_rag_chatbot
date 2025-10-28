@@ -19,11 +19,14 @@ import time
 import gc
 import subprocess
 import sys
+import json
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 app.config['UPLOAD_FOLDER'] = 'data/'
+app.config['HISTORY_FOLDER'] = 'chat_history/'
 
 # Configuration
 CHROMA_PATH = "chroma_db"
@@ -33,6 +36,7 @@ TOP_K_RESULTS = 4
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(app.config['HISTORY_FOLDER'], exist_ok=True)
 
 # Check if we need to cleanup from previous session
 def cleanup_on_startup():
@@ -60,6 +64,106 @@ def cleanup_on_startup():
                 pass
 
 cleanup_on_startup()
+
+# Chat history management functions
+def save_chat_message(session_id, role, message, sources=None):
+    """Save a chat message to history"""
+    history_file = os.path.join(app.config['HISTORY_FOLDER'], f"{session_id}.json")
+    
+    try:
+        # Load existing history or create new
+        if os.path.exists(history_file):
+            with open(history_file, 'r', encoding='utf-8') as f:
+                history = json.load(f)
+        else:
+            history = {
+                'session_id': session_id,
+                'created_at': datetime.now().isoformat(),
+                'messages': []
+            }
+        
+        # Add new message
+        message_data = {
+            'role': role,
+            'content': message,
+            'timestamp': datetime.now().isoformat()
+        }
+        if sources:
+            message_data['sources'] = sources
+        
+        history['messages'].append(message_data)
+        history['updated_at'] = datetime.now().isoformat()
+        
+        # Save to file
+        with open(history_file, 'w', encoding='utf-8') as f:
+            json.dump(history, f, indent=2, ensure_ascii=False)
+        
+        return True
+    except Exception as e:
+        print(f"Error saving chat message: {e}")
+        return False
+
+def get_chat_history(session_id):
+    """Get chat history for a session"""
+    history_file = os.path.join(app.config['HISTORY_FOLDER'], f"{session_id}.json")
+    
+    try:
+        if os.path.exists(history_file):
+            with open(history_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return None
+    except Exception as e:
+        print(f"Error loading chat history: {e}")
+        return None
+
+def list_chat_sessions():
+    """List all chat sessions"""
+    try:
+        sessions = []
+        for filename in os.listdir(app.config['HISTORY_FOLDER']):
+            if filename.endswith('.json'):
+                filepath = os.path.join(app.config['HISTORY_FOLDER'], filename)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        history = json.load(f)
+                        
+                    # Get first user message as preview
+                    preview = "New conversation"
+                    for msg in history.get('messages', []):
+                        if msg['role'] == 'user':
+                            preview = msg['content'][:50]
+                            if len(msg['content']) > 50:
+                                preview += "..."
+                            break
+                    
+                    sessions.append({
+                        'session_id': history['session_id'],
+                        'created_at': history.get('created_at', ''),
+                        'updated_at': history.get('updated_at', history.get('created_at', '')),
+                        'message_count': len(history.get('messages', [])),
+                        'preview': preview
+                    })
+                except:
+                    continue
+        
+        # Sort by updated_at descending
+        sessions.sort(key=lambda x: x['updated_at'], reverse=True)
+        return sessions
+    except Exception as e:
+        print(f"Error listing chat sessions: {e}")
+        return []
+
+def delete_chat_session(session_id):
+    """Delete a chat session"""
+    history_file = os.path.join(app.config['HISTORY_FOLDER'], f"{session_id}.json")
+    try:
+        if os.path.exists(history_file):
+            os.unlink(history_file)
+            return True
+        return False
+    except Exception as e:
+        print(f"Error deleting chat session: {e}")
+        return False
 
 class RAGChatbot:
     def __init__(self):
@@ -384,6 +488,7 @@ def chat():
     
     data = request.json
     query = data.get('message', '').strip()
+    session_id = data.get('session_id', 'default')
     
     if not query:
         return jsonify({
@@ -392,13 +497,129 @@ def chat():
         })
     
     try:
+        # Save user message
+        save_chat_message(session_id, 'user', query)
+        
+        # Get response from chatbot
         response, sources, has_rag = chatbot.chat(query)
+        
+        # Save assistant response
+        save_chat_message(session_id, 'assistant', response, sources)
+        
         return jsonify({
             'success': True,
             'response': response,
             'sources': sources,
-            'has_rag': has_rag
+            'has_rag': has_rag,
+            'session_id': session_id
         })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/history/sessions', methods=['GET'])
+def get_sessions():
+    """Get list of all chat sessions"""
+    try:
+        sessions = list_chat_sessions()
+        return jsonify({
+            'success': True,
+            'sessions': sessions
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/history/<session_id>', methods=['GET'])
+def get_session_history(session_id):
+    """Get chat history for a specific session"""
+    try:
+        history = get_chat_history(session_id)
+        if history:
+            return jsonify({
+                'success': True,
+                'history': history
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Session not found'
+            })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/history/<session_id>', methods=['DELETE'])
+def delete_session(session_id):
+    """Delete a chat session"""
+    try:
+        if delete_chat_session(session_id):
+            return jsonify({
+                'success': True,
+                'message': 'Session deleted'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Session not found'
+            })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/files', methods=['GET'])
+def list_files():
+    """List uploaded files"""
+    try:
+        files = []
+        if os.path.exists(app.config['UPLOAD_FOLDER']):
+            for filename in os.listdir(app.config['UPLOAD_FOLDER']):
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                if os.path.isfile(filepath):
+                    file_stat = os.stat(filepath)
+                    files.append({
+                        'name': filename,
+                        'size': file_stat.st_size,
+                        'uploaded_at': datetime.fromtimestamp(file_stat.st_mtime).isoformat()
+                    })
+        
+        # Sort by upload time descending
+        files.sort(key=lambda x: x['uploaded_at'], reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'files': files
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/files/<filename>', methods=['DELETE'])
+def delete_file(filename):
+    """Delete a specific uploaded file"""
+    try:
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if os.path.exists(filepath) and os.path.isfile(filepath):
+            os.unlink(filepath)
+            return jsonify({
+                'success': True,
+                'message': f'File {filename} deleted. Please re-upload files to rebuild the database.'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'File not found'
+            })
     except Exception as e:
         return jsonify({
             'success': False,
