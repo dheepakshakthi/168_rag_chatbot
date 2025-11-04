@@ -1,0 +1,554 @@
+// Auto-resize textarea
+const messageInput = document.getElementById('messageInput');
+const chatContainer = document.getElementById('chatContainer');
+const sendBtn = document.getElementById('sendBtn');
+
+// State management
+let currentSessionId = window.currentSessionId || ('session_' + Date.now());
+let sidebarStates = {
+    history: false,
+    files: false
+};
+
+messageInput.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = (this.scrollHeight) + 'px';
+});
+
+// Initialize on load
+window.addEventListener('load', () => {
+    messageInput.focus();
+    loadChatHistory();
+    loadFilesList();
+});
+
+// Sidebar toggle functions
+function toggleSidebar(type) {
+    const sidebar = document.getElementById(type === 'history' ? 'historySidebar' : 'filesSidebar');
+    sidebarStates[type] = !sidebarStates[type];
+    
+    if (sidebarStates[type]) {
+        sidebar.classList.add('open');
+        if (type === 'history') {
+            loadChatHistory();
+        } else {
+            loadFilesList();
+        }
+    } else {
+        sidebar.classList.remove('open');
+    }
+}
+
+// Load chat history list
+async function loadChatHistory() {
+    const historyList = document.getElementById('historyList');
+    historyList.innerHTML = '<div class="loading-text">Loading...</div>';
+    
+    try {
+        const response = await fetch('/history/sessions');
+        const data = await response.json();
+        
+        if (data.success && data.sessions.length > 0) {
+            let html = '';
+            data.sessions.forEach(session => {
+                const date = new Date(session.updated_at);
+                const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const isActive = session.session_id === currentSessionId;
+                
+                html += `
+                    <div class="history-item ${isActive ? 'active' : ''}" onclick="loadSession('${session.session_id}')">
+                        <div class="history-preview">${session.preview}</div>
+                        <div class="history-meta">
+                            <span class="history-date">${dateStr}</span>
+                            <span class="history-count">${session.message_count} msgs</span>
+                        </div>
+                        <button class="delete-history-btn" onclick="deleteSession(event, '${session.session_id}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                            </svg>
+                        </button>
+                    </div>
+                `;
+            });
+            historyList.innerHTML = html;
+        } else {
+            historyList.innerHTML = '<div class="empty-state">No chat history yet</div>';
+        }
+    } catch (error) {
+        historyList.innerHTML = '<div class="error-text">Failed to load history</div>';
+    }
+}
+
+// Load a chat session
+async function loadSession(sessionId) {
+    try {
+        const response = await fetch(`/history/${sessionId}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            currentSessionId = sessionId;
+            
+            // Clear current chat
+            chatContainer.innerHTML = '';
+            
+            // Load messages
+            data.history.messages.forEach(msg => {
+                if (msg.role === 'user') {
+                    addMessage(msg.content, 'user');
+                } else {
+                    addMessage(msg.content, 'assistant', msg.sources);
+                }
+            });
+            
+            // Update history list to show active session
+            loadChatHistory();
+            
+            showNotification('Loaded chat session', 'success');
+        }
+    } catch (error) {
+        showNotification('Failed to load session', 'error');
+    }
+}
+
+// Start a new chat
+function startNewChat() {
+    currentSessionId = 'session_' + Date.now();
+    chatContainer.innerHTML = `
+        <div class="welcome-message">
+            <div class="welcome-icon">💡</div>
+            <h2>Welcome to 168 AI Assistant!</h2>
+            ${window.hasDocuments 
+                ? '<p class="rag-status">🟢 RAG Mode Active - I\'ll answer based on your uploaded documents</p>'
+                : '<p class="rag-status">🔵 General Mode - Upload documents to enable RAG capabilities</p>'}
+            <p>I'm your AI assistant that can help you with various tasks:</p>
+            <div class="feature-grid">
+                <div class="feature-item"><span class="feature-icon">📄</span><span>PDF Documents</span></div>
+                <div class="feature-item"><span class="feature-icon">🌐</span><span>HTML Files</span></div>
+                <div class="feature-item"><span class="feature-icon">💻</span><span>Code Files</span></div>
+                <div class="feature-item"><span class="feature-icon">💬</span><span>General Chat</span></div>
+            </div>
+            <p class="welcome-subtext">Upload your documents to get started with RAG, or just chat with me!</p>
+            <div class="supported-formats">
+                <strong>Supported formats:</strong> PDF, HTML, Python, Java, JavaScript, C/C++, C#, Ruby, Go, Rust, PHP, Swift, Kotlin, TypeScript, Text, Markdown
+            </div>
+        </div>
+    `;
+    loadChatHistory();
+    showNotification('Started new chat', 'success');
+}
+
+// Delete a chat session
+async function deleteSession(event, sessionId) {
+    event.stopPropagation();
+    
+    if (!confirm('Delete this chat history?')) return;
+    
+    try {
+        const response = await fetch(`/history/${sessionId}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            if (sessionId === currentSessionId) {
+                startNewChat();
+            } else {
+                loadChatHistory();
+            }
+            showNotification('Chat deleted', 'success');
+        }
+    } catch (error) {
+        showNotification('Failed to delete chat', 'error');
+    }
+}
+
+// Load files list
+async function loadFilesList() {
+    const filesList = document.getElementById('filesList');
+    filesList.innerHTML = '<div class="loading-text">Loading...</div>';
+    
+    try {
+        const response = await fetch('/files');
+        const data = await response.json();
+        
+        if (data.success && data.files.length > 0) {
+            let html = '';
+            data.files.forEach(file => {
+                const sizeKB = (file.size / 1024).toFixed(2);
+                const date = new Date(file.uploaded_at);
+                const dateStr = date.toLocaleDateString();
+                
+                // Get file icon based on extension
+                const ext = file.name.split('.').pop().toLowerCase();
+                let icon = '📄';
+                if (ext === 'pdf') icon = '📕';
+                else if (['html', 'htm'].includes(ext)) icon = '🌐';
+                else if (['py', 'java', 'js', 'cpp', 'c', 'h', 'cs'].includes(ext)) icon = '💻';
+                
+                html += `
+                    <div class="file-item">
+                        <div class="file-icon">${icon}</div>
+                        <div class="file-info">
+                            <div class="file-name" title="${file.name}">${file.name}</div>
+                            <div class="file-meta">${sizeKB} KB • ${dateStr}</div>
+                        </div>
+                        <button class="delete-file-btn" onclick="deleteFile(event, '${file.name}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M18 6L6 18M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                `;
+            });
+            filesList.innerHTML = html;
+        } else {
+            filesList.innerHTML = '<div class="empty-state">No files uploaded</div>';
+        }
+    } catch (error) {
+        filesList.innerHTML = '<div class="error-text">Failed to load files</div>';
+    }
+}
+
+// Delete a file
+async function deleteFile(event, filename) {
+    event.stopPropagation();
+    
+    if (!confirm(`Delete ${filename}?`)) return;
+    
+    try {
+        const response = await fetch(`/files/${encodeURIComponent(filename)}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            loadFilesList();
+            showNotification(data.message, 'info', 7000);
+        } else {
+            showNotification('Error: ' + data.error, 'error');
+        }
+    } catch (error) {
+        showNotification('Failed to delete file', 'error');
+    }
+}
+
+// Handle file upload
+async function handleFileUpload(event) {
+    const files = event.target.files;
+    if (files.length === 0) return;
+    
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+    }
+    
+    // Show upload status
+    showNotification('Uploading and processing files...', 'info');
+    
+    try {
+        const response = await fetch('/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification(data.message + ' - RAG mode enabled!', 'success');
+            // Update UI
+            window.hasDocuments = data.has_documents;
+            updateHeaderMode(data.has_documents);
+            // Enable clear docs button
+            document.querySelector('.clear-docs-btn').disabled = false;
+            // Refresh files list
+            loadFilesList();
+        } else {
+            showNotification('Error: ' + data.error, 'error');
+        }
+    } catch (error) {
+        showNotification('Upload failed: ' + error.message, 'error');
+    }
+    
+    // Reset file input
+    event.target.value = '';
+}
+
+// Clear documents
+async function clearDocuments() {
+    if (!confirm('Are you sure you want to delete all uploaded documents? This will also clear the vector database.')) {
+        return;
+    }
+    
+    showNotification('Clearing documents...', 'info');
+    
+    try {
+        const response = await fetch('/clear_documents', {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            if (data.needs_restart) {
+                showNotification(data.message, 'info', 10000);
+            } else {
+                showNotification(data.message + ' - Switched to general mode', 'success');
+                window.hasDocuments = false;
+                updateHeaderMode(false);
+                // Disable clear docs button
+                document.querySelector('.clear-docs-btn').disabled = true;
+            }
+        } else {
+            showNotification('Error: ' + data.error, 'error', 10000);
+        }
+    } catch (error) {
+        showNotification('Failed to clear documents: ' + error.message, 'error');
+    }
+}
+
+// Update header mode indicator
+function updateHeaderMode(hasDocuments) {
+    const modeText = document.querySelector('.logo-text p');
+    if (modeText) {
+        modeText.textContent = hasDocuments ? 'Your AI Assistant (RAG Mode)' : 'Your AI Assistant (General Mode)';
+    }
+}
+
+// Show notification
+function showNotification(message, type = 'info', duration = 5000) {
+    // Remove existing notification
+    const existing = document.querySelector('.notification');
+    if (existing) existing.remove();
+    
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    
+    document.body.appendChild(notification);
+    
+    // Auto-remove after specified duration
+    setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => notification.remove(), 300);
+    }, duration);
+}
+
+// Handle Enter key
+function handleKeyPress(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+    }
+}
+
+// Send message
+async function sendMessage() {
+    const message = messageInput.value.trim();
+    
+    if (!message) return;
+    
+    // Disable input while processing
+    messageInput.disabled = true;
+    sendBtn.disabled = true;
+    
+    // Remove welcome message if present
+    const welcomeMsg = document.querySelector('.welcome-message');
+    if (welcomeMsg) {
+        welcomeMsg.remove();
+    }
+    
+    // Add user message
+    addMessage(message, 'user');
+    
+    // Clear input
+    messageInput.value = '';
+    messageInput.style.height = 'auto';
+    
+    // Show typing indicator
+    const typingId = showTypingIndicator();
+    
+    try {
+        // Send to backend
+        const response = await fetch('/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                message: message,
+                session_id: currentSessionId
+            })
+        });
+        
+        const data = await response.json();
+        
+        // Remove typing indicator
+        removeTypingIndicator(typingId);
+        
+        if (data.success) {
+            // Add assistant response
+            addMessage(data.response, 'assistant', data.sources);
+            // Refresh history list
+            loadChatHistory();
+        } else {
+            // Show error
+            addMessage('❌ Error: ' + data.error, 'assistant');
+        }
+    } catch (error) {
+        removeTypingIndicator(typingId);
+        addMessage('❌ Connection error. Please make sure the server is running.', 'assistant');
+    }
+    
+    // Re-enable input
+    messageInput.disabled = false;
+    sendBtn.disabled = false;
+    messageInput.focus();
+}
+
+// Add message to chat
+function addMessage(text, sender, sources = null) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${sender}`;
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    
+    // Format text (basic markdown-like formatting)
+    const formattedText = formatText(text);
+    contentDiv.innerHTML = formattedText;
+    
+    messageDiv.appendChild(contentDiv);
+    
+    // Add sources if available
+    if (sources && sources.length > 0) {
+        const sourcesDiv = document.createElement('div');
+        sourcesDiv.className = 'sources';
+        
+        let sourcesHTML = '<div class="sources-title">📚 Sources:</div>';
+        sources.forEach((source, index) => {
+            const relevance = source.page !== 'N/A' 
+                ? `Page ${source.page} - Relevance: ${(1 - source.score).toFixed(2)}`
+                : `Relevance: ${(1 - source.score).toFixed(2)}`;
+            sourcesHTML += `<div class="source-item">
+                ${index + 1}. ${source.source} (${relevance})
+            </div>`;
+        });
+        
+        sourcesDiv.innerHTML = sourcesHTML;
+        contentDiv.appendChild(sourcesDiv);
+    }
+    
+    chatContainer.appendChild(messageDiv);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// Format text with basic markdown
+function formatText(text) {
+    // Escape HTML
+    text = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    
+    // Code blocks
+    text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre><code>${code.trim()}</code></pre>`;
+    });
+    
+    // Inline code
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+    
+    // Bold
+    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    
+    // Line breaks
+    text = text.replace(/\n/g, '<br>');
+    
+    return text;
+}
+
+// Show typing indicator
+function showTypingIndicator() {
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message assistant';
+    typingDiv.id = 'typing-' + Date.now();
+    
+    const indicatorDiv = document.createElement('div');
+    indicatorDiv.className = 'typing-indicator';
+    indicatorDiv.innerHTML = `
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+    `;
+    
+    typingDiv.appendChild(indicatorDiv);
+    chatContainer.appendChild(typingDiv);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    
+    return typingDiv.id;
+}
+
+// Remove typing indicator
+function removeTypingIndicator(id) {
+    const indicator = document.getElementById(id);
+    if (indicator) {
+        indicator.remove();
+    }
+}
+
+// Clear chat
+async function clearChat() {
+    if (confirm('Are you sure you want to clear the current chat?')) {
+        // Start a new session
+        startNewChat();
+        
+        // Call clear endpoint
+        await fetch('/clear', { method: 'POST' });
+    }
+}
+
+// Focus input on load
+        const ragStatus = window.hasDocuments 
+            ? '<p class="rag-status">🟢 RAG Mode Active - I\'ll answer based on your uploaded documents</p>'
+            : '<p class="rag-status">🔵 General Mode - Upload documents to enable RAG capabilities</p>';
+        
+        // Clear chat container
+        chatContainer.innerHTML = `
+            <div class="welcome-message">
+                <div class="welcome-icon">💡</div>
+                <h2>Welcome to 168 AI Assistant!</h2>
+                ${ragStatus}
+                <p>I'm your AI assistant that can help you with various tasks:</p>
+                <div class="feature-grid">
+                    <div class="feature-item">
+                        <span class="feature-icon">�</span>
+                        <span>PDF Documents</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">🌐</span>
+                        <span>HTML Files</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">�</span>
+                        <span>Code Files</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">�</span>
+                        <span>General Chat</span>
+                    </div>
+                </div>
+                <p class="welcome-subtext">Upload your documents to get started with RAG, or just chat with me!</p>
+                <div class="supported-formats">
+                    <strong>Supported formats:</strong> PDF, HTML, Python, Java, JavaScript, C/C++, C#, Ruby, Go, Rust, PHP, Swift, Kotlin, TypeScript, Text, Markdown
+                </div>
+            </div>
+        `;
+        
+        // Call clear endpoint
+        await fetch('/clear', { method: 'POST' });
+    }
+}
+
+// Focus input on load
+window.addEventListener('load', () => {
+    messageInput.focus();
+});
